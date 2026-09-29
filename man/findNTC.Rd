@@ -4,10 +4,12 @@
 \alias{findNTC}
 \title{Find the non-toxic concentration.}
 \usage{
-findNTC(bendrObj)
+findNTC(bendrObj, max.extension = 10)
 }
 \arguments{
 \item{bendrObj}{A bendr result object}
+
+\item{max.extension}{maximum number of log10 units by which the concentration grid is extended below its start}
 }
 \value{
 The absolute (non-logged) non-toxic concentration value

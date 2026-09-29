@@ -2,16 +2,25 @@
 % Please edit documentation in R/utility.R
 \name{extend_ci}
 \alias{extend_ci}
-\title{Extends the plot data up to the concentration where the lower confidence interval is at 99 percent}
+\title{Extends the plot data down to a lower log concentration}
 \usage{
-extend_ci(fo)
+extend_ci(fo, lox = NULL, step = 0.001, ci.method = NULL)
 }
 \arguments{
 \item{fo}{bendr fit object}
+
+\item{lox}{lowest log10 concentration of the extended grid; by default the
+concentration at which the fitted effect is 99.9 percent. The existing range is never shrunk.}
+
+\item{step}{grid spacing in log10 units}
+
+\item{ci.method}{"delta" or "bootstrap"; by default the method of the fit}
 }
 \value{
 dataframe
 }
 \description{
-Extends the plot data up to the concentration where the lower confidence interval is at 99 percent
+The prediction bands are computed with the same method (delta or bootstrap)
+and confidence level as the original fit. For the bootstrap, the stored
+bootstrap parameter estimates are re-evaluated on the extended grid.
 }

@@ -18,7 +18,7 @@ then install bendr from github:
 
 ```{r install,eval=FALSE}
 require(devtools)
-devtools::install_github('alxbetz/bendr')
+devtools::install_github('schuerc/bendr')
 ```
 
 

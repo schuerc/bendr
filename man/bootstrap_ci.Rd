@@ -30,10 +30,16 @@ bootstrap_ci(
 
 \item{level}{confidence level}
 
-\item{verbose}{print intermediate results}
+\item{verbose}{print intermediate results
+
+Replicates are resampled within each concentration level, so every bootstrap
+sample contains all tested concentrations. Each resample is fitted with
+Levenberg-Marquardt starting from the original estimates; failed fits are
+recorded as NA and excluded from the quantiles.}
 }
 \value{
-list: bootstrapped confidence intervals for prediction parameters and prediction bands
+list: bootstrapped confidence intervals for prediction parameters and prediction bands,
+the raw bootstrap parameter estimates (boot.params) and the number of failed fits (n.failed)
 }
 \description{
 Calculate parameter and prediction confidence intervals using the bootstrap

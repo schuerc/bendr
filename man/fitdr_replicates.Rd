@@ -12,7 +12,8 @@ fitdr_replicates(
   level = 0.95,
   start = vector(),
   ci_method = "delta",
-  verbose = F
+  verbose = F,
+  replicates = c("independent", "same_plate")
 )
 }
 \arguments{
@@ -31,6 +32,11 @@ fitdr_replicates(
 \item{ci_method}{method for confidence interval calculation, one of ["delta","bootstrap"]}
 
 \item{verbose}{print fitting intermediate results and confidence interval calculation intermediate  results}
+
+\item{replicates}{what the replicate columns are:
+"independent" (separate experiments): the curve is fitted to all replicate values, df = n_values - 2;
+"same_plate" (wells on one plate, pseudo-replicates): the curve is fitted to the concentration
+means, df = n_concentrations - 2. Bootstrap CIs need independent replicates.}
 }
 \value{
 list: fit object
