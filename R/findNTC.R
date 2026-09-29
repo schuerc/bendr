@@ -62,15 +62,13 @@ findNTC = function(bendrObj, max.extension = 10, measured.criterion = TRUE,
   # The NtC criteria need the delta-method bands: bootstrap bands are quantiles of fitted
   # curves, which stay below 100%, so the upper criterion could never be met. For a bootstrap
   # fit the bootstrap is used only for the EC50/EC10/slope CIs.
-  delta.bands = !identical(bendrObj$ci.method, "bootstrap")
   covers_both = function(pd) {
     i = which.min(pd$log.concentration)
     isTRUE(pd$ci.values.upper[i] > 100) && isTRUE(pd$ci.values.lower[i] > 90)
   }
-  plot.data = if(delta.bands) bendrObj$plot.data else extend_ci(bendrObj, ci.method = "delta")
-  if(!covers_both(plot.data)) {
-    plot.data = extend_ci(bendrObj, ci.method = "delta")
-  }
+  # always evaluate on the fine grid of extend_ci (0.001 log units), so the result does not
+  # depend on the resolution of the plotting grid
+  plot.data = extend_ci(bendrObj, ci.method = "delta")
   lox = min(plot.data$log.concentration)
   n.ext = 0
   while(!covers_both(plot.data) && n.ext < max.extension) {
