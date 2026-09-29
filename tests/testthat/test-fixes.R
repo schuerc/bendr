@@ -86,3 +86,16 @@ test_that("findNTC uses delta-method bands also for a bootstrap fit", {
   fd = fitdr_replicates(drc.formula, syn, 2:4, conc)
   expect_equal(findNTC(fb), findNTC(fd))
 })
+
+test_that("findNTC switches and details", {
+  fo = fitdr_replicates(drc.formula, syn, 2:4, conc)
+  d = findNTC(fo, details = TRUE)
+  expect_equal(d$NtC, findNTC(fo))
+  expect_true(d$rule %in% c("lower", "upper", "narrow_ci_correction"))
+  expect_equal(d$NtC_measured, 0.5)   # all replicates at conc 0.5 are below 90%
+  expect_true(is.data.frame(d$plot.data))
+  # without the correction the NtC can only come from one of the two criteria
+  d0 = findNTC(fo, narrow.ci.correction = FALSE, measured.criterion = FALSE, details = TRUE)
+  expect_true(d0$NtC %in% c(d0$NtC_lower, d0$NtC_upper))
+  expect_false(d0$measured.applied)
+})

@@ -1,3 +1,9 @@
+# bendr 0.4.1 (2026-09-29)
+
+* `findNTC()`: new arguments `measured.criterion` and `narrow.ci.correction` (both default TRUE,
+  as before) and `details`: with `details = TRUE` a list with NtC_lower, NtC_upper, their effects,
+  the rule that chose the NtC, NtC_measured and the confidence band used is returned.
+
 # bendr 0.4.0 (2026-09-29)
 
 Fork of https://github.com/alxbetz/bendr (0.3.0, commit 0f2d407), maintained at

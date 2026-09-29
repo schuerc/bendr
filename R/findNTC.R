@@ -6,9 +6,16 @@
 #' A bendr result object
 #' @param max.extension
 #' maximum number of log10 units by which the concentration grid is extended below its start
+#' @param measured.criterion
+#' apply the measured value criterion (default TRUE)
+#' @param narrow.ci.correction
+#' apply the correction for narrow confidence intervals (default TRUE)
+#' @param details
+#' if TRUE, return a list with the intermediate values (NtC_lower, NtC_upper, their effects,
+#' the rule that chose the NtC, NtC_measured, the confidence band used) instead of the NtC only
 #'
 #' @return
-#' The absolute (non-logged) non-toxic concentration value
+#' The absolute (non-logged) non-toxic concentration value, or a list if details = TRUE
 #' @export
 #'
 #' @examples
@@ -25,7 +32,25 @@
 #'fitObjectRep = fitdr_replicates(drc.formula,rdata,2:4,conc)
 #'ntc = findNTC(fitObjectRep)
 #'
-findNTC = function(bendrObj, max.extension = 10) {
+findNTC = function(bendrObj, max.extension = 10, measured.criterion = TRUE,
+                   narrow.ci.correction = TRUE, details = FALSE) {
+  # individual replicates, also when the curve was fitted to concentration means
+  measured = if(!is.null(bendrObj$data.long)) bendrObj$data.long else bendrObj$data
+  # lowest tested concentration with >= 10% effect in any replicate
+  toxic = measured$conc[measured$effect <= 90]
+  NtC_measured = if(length(toxic) > 0) min(toxic) else NA_real_
+
+  out = list(NtC = NA_real_, NtC_model = NA_real_, Effect_NtC = NA_real_,
+             NtC_lower = NA_real_, NtC_upper = NA_real_,
+             Effect_NtC_lower = NA_real_, Effect_NtC_upper = NA_real_,
+             rule = NA_character_, measured.applied = FALSE, NtC_measured = NtC_measured,
+             n.extensions = 0, plot.data = NULL, message = NA_character_)
+  fail = function(msg) {
+    warning(paste("findNTC:", msg))
+    out$message = msg
+    if(details) out else NA_real_
+  }
+
   if(all(is.na(bendrObj$plot.data$ci.values.lower))) {
     stop("findNTC: no confidence bands available (the CI calculation failed), so the NtC cannot be determined")
   }
@@ -53,9 +78,10 @@ findNTC = function(bendrObj, max.extension = 10) {
     n.ext = n.ext + 1
     plot.data = extend_ci(bendrObj, lox = lox, ci.method = "delta")
   }
+  out$n.extensions = n.ext
+  out$plot.data = plot.data
   if(!covers_both(plot.data)) {
-    warning(sprintf("findNTC: the CI criteria are not reached within %d log units below the tested range; NtC is undetermined", max.extension))
-    return(NA_real_)
+    return(fail(sprintf("the CI criteria are not reached within %d log units below the tested range; NtC is undetermined", max.extension)))
   }
 
   upperCI = plot.data$ci.values.upper
@@ -65,17 +91,9 @@ findNTC = function(bendrObj, max.extension = 10) {
   logEC50 = coef(bendrObj$curve.fit)['logEC50']
   slope = coef(bendrObj$curve.fit)['slope']
 
-  # In case of very narrow confidence intervals, caused e.g. by the non-optimal concentration range:
-  #   If Effect_NtClower CI> 10 * Effect_NtCupperCI -> Effect_NtC = Effect_NtClowerCI / 10 where: Effect_NtCi (%) is the effect caused by the NtC
-  # NtC can be calculated then from Effect_NtC (and sigmoidal dose-response curve).
-  #
-
-
   ## NtC upper
-  # find concentration at which the upper confidence interval falls below
-  # 100
-  uci100 = upperCI > 100
-  uci100idx = which(uci100)
+  # highest concentration at which the upper confidence interval is above 100
+  uci100idx = which(upperCI > 100)
   if(length(uci100idx) > 0) {
     inds = max(uci100idx)
     Effect_NtC_upper = 100 - curve.predict[inds]
@@ -89,14 +107,11 @@ findNTC = function(bendrObj, max.extension = 10) {
     NtC_upper = 0
   }
 
-
-
   ## NtC lower
-  # find concentration at which lower confidence interval is 90
+  # highest concentration at which the lower confidence interval is above 90
   lci90idx = which(lowerCI > 90)
   if(length(lci90idx) == 0) {
-    warning("findNTC: the lower confidence band never exceeds 90% survival, even on the extended range; NtC is undetermined")
-    return(NA_real_)
+    return(fail("the lower confidence band never exceeds 90% survival, even on the extended range; NtC is undetermined"))
   }
   inds = max(lci90idx)
   Effect_NtC_lower = 100 - curve.predict[inds]
@@ -105,47 +120,43 @@ findNTC = function(bendrObj, max.extension = 10) {
   } else {
     NtC_lower = 0
   }
-
-
-
+  out[c("NtC_lower", "NtC_upper", "Effect_NtC_lower", "Effect_NtC_upper")] =
+    list(unname(NtC_lower), unname(NtC_upper), unname(Effect_NtC_lower), unname(Effect_NtC_upper))
 
   ## Choose NtC based on upper and lower CI criteria
+  # In case of very narrow confidence intervals, caused e.g. by the non-optimal concentration range:
+  #   If Effect_NtC_lowerCI > 10 * Effect_NtC_upperCI -> Effect_NtC = Effect_NtC_lowerCI / 10
+  # The NtC is then calculated from Effect_NtC with the dose-response curve.
   if (NtC_upper > NtC_lower) {
     NtC = NtC_lower
     Effect_NtC = Effect_NtC_lower
-  } else {
-
-
+    rule = "lower"
+  } else if (Effect_NtC_lower == 0 && Effect_NtC_upper == 0) {
     # both effects 0 would give 0/0 in the ratio below
-    if (Effect_NtC_lower == 0 && Effect_NtC_upper == 0) {
-      warning("findNTC: predicted effect is 0 at both CI criteria; NtC is undetermined")
-      return(NA_real_)
-    } else if (Effect_NtC_lower/Effect_NtC_upper > 10) {
-      Effect_NtC = Effect_NtC_lower/10
-      NtC = 10^(logEC50-log10(100/(100-Effect_NtC)-1)/slope)
+    return(fail("predicted effect is 0 at both CI criteria; NtC is undetermined"))
+  } else if (narrow.ci.correction && Effect_NtC_lower/Effect_NtC_upper > 10) {
+    Effect_NtC = Effect_NtC_lower/10
+    NtC = 10^(logEC50-log10(100/(100-Effect_NtC)-1)/slope)
+    rule = "narrow_ci_correction"
+  } else {
+    NtC = NtC_upper
+    Effect_NtC = Effect_NtC_upper
+    rule = "upper"
+  }
+  NtC = unname(NtC)
+  out[c("NtC_model", "Effect_NtC", "rule")] = list(NtC, unname(Effect_NtC), rule)
 
-    } else {
-      NtC = NtC_upper
-      Effect_NtC = Effect_NtC_upper
+  ## Measured value criterion: if any replicate at a concentration below the NtC shows
+  # >= 10% effect, the NtC is the lowest such concentration
+  if(measured.criterion) {
+    belowNtC = measured %>%
+      dplyr::filter(conc < NtC,effect <= 90)
+    if(nrow(belowNtC) > 0) {
+      NtC = belowNtC %>% pull(conc) %>% min()
+      out$measured.applied = TRUE
     }
   }
+  out$NtC = NtC
 
-  ## Include measured data if the effect of any replicate (at concentration below
-  # the concentration, which has been thus far chosen as the NtC) is > 10%
-  # 1. which measured concentrations are below NtC
-  # 2. does any of the effects measured at these concentrations have an effect > 10%
-  # 3. if yes, select the lowest concentration that is below the NtC
-
-
-  # individual replicates, also when the curve was fitted to concentration means
-  measured = if(!is.null(bendrObj$data.long)) bendrObj$data.long else bendrObj$data
-  belowNtC = measured %>%
-    dplyr::filter(conc < NtC,effect <= 90)
-  if(nrow(belowNtC) > 0) {
-    NtC = belowNtC %>% pull(conc) %>% min()
-  }
-
-  NtC
+  if(details) out else NtC
 }
-
-

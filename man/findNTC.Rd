@@ -4,15 +4,28 @@
 \alias{findNTC}
 \title{Find the non-toxic concentration.}
 \usage{
-findNTC(bendrObj, max.extension = 10)
+findNTC(
+  bendrObj,
+  max.extension = 10,
+  measured.criterion = TRUE,
+  narrow.ci.correction = TRUE,
+  details = FALSE
+)
 }
 \arguments{
 \item{bendrObj}{A bendr result object}
 
 \item{max.extension}{maximum number of log10 units by which the concentration grid is extended below its start}
+
+\item{measured.criterion}{apply the measured value criterion (default TRUE)}
+
+\item{narrow.ci.correction}{apply the correction for narrow confidence intervals (default TRUE)}
+
+\item{details}{if TRUE, return a list with the intermediate values (NtC_lower, NtC_upper, their effects,
+the rule that chose the NtC, NtC_measured, the confidence band used) instead of the NtC only}
 }
 \value{
-The absolute (non-logged) non-toxic concentration value
+The absolute (non-logged) non-toxic concentration value, or a list if details = TRUE
 }
 \description{
 If you use the result of this calculation in your research, please cite Stadnicka-Michalak et al.
