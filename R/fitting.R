@@ -352,17 +352,34 @@ fitdr = function(m.formula,fdata,level=0.95,ci_method="delta",start=vector(),ver
 #' @param start starting values
 #' @param verbose print fitting intermediate results and confidence interval calculation intermediate  results
 #' @param ci_method method for confidence interval calculation, one of ["delta","bootstrap"]
+#' @param replicates what the replicate columns are:
+#' "independent" (separate experiments): the curve is fitted to all replicate values, df = n_values - 2;
+#' "same_plate" (wells on one plate, pseudo-replicates): the curve is fitted to the concentration
+#' means, df = n_concentrations - 2. Bootstrap CIs need independent replicates.
 #'
 #' @return list: fit object
 #' @importFrom tidyr drop_na
 #' @export
-fitdr_replicates= function(m.formula,fdata,effectColumns,concColumn,level=0.95,start=vector(),ci_method="delta",verbose=F) {
+fitdr_replicates= function(m.formula,fdata,effectColumns,concColumn,level=0.95,start=vector(),ci_method="delta",verbose=F,
+                           replicates=c("independent","same_plate")) {
+  replicates = match.arg(replicates)
+  if(replicates == "same_plate" && ci_method == "bootstrap") {
+    stop("Bootstrap confidence intervals need independent replicates; use ci_method = \"delta\" for replicates from the same plate")
+  }
   quo_concColumn = enquo(concColumn)
   data.logged = fdata %>% dplyr::mutate(logconc := log10(!! quo_concColumn))
   data.long = data.logged %>% tidyr::gather(replicateID,effect,effectColumns) %>%
     drop_na() %>%
     arrange(desc(logconc))
-  data.fit = fitdr(m.formula,data.long,level=level,start=start,ci_method=ci_method,verbose=verbose)
+  data.for.fit = data.long
+  if(replicates == "same_plate") {
+    data.for.fit = data.long %>%
+      dplyr::group_by(!! quo_concColumn, logconc) %>%
+      dplyr::summarise(effect = mean(effect), .groups = "drop") %>%
+      arrange(desc(logconc))
+  }
+  data.fit = fitdr(m.formula,data.for.fit,level=level,start=start,ci_method=ci_method,verbose=verbose)
+  data.fit$replicates = replicates
   data.fit$data.long = data.long
   data.fit$nreplicates = length(effectColumns)
   data.fit
