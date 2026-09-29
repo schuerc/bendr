@@ -114,59 +114,58 @@ prediction_ci = function(m.formula,x.values,curvefit,curve.predict,dof,level = 0
 #' @param level confidence level
 #' @param verbose print intermediate results
 #'
-#' @return list: bootstrapped confidence intervals for prediction parameters and prediction bands
+#' Replicates are resampled within each concentration level, so every bootstrap
+#' sample contains all tested concentrations. Each resample is fitted with
+#' Levenberg-Marquardt starting from the original estimates; failed fits are
+#' recorded as NA and excluded from the quantiles.
+#'
+#' @return list: bootstrapped confidence intervals for prediction parameters and prediction bands,
+#' the raw bootstrap parameter estimates (boot.params) and the number of failed fits (n.failed)
 bootstrap_ci = function(m.formula,data,logC.values,curvefit,curve.predict,n.boot=1000,level = 0.95,verbose=FALSE) {
-  logEC50.value = coef(curvefit)['logEC50']
-  slope.value = coef(curvefit)['slope']
+  start = coef(curvefit)[c('logEC50','slope')]
 
-
-  ## arrays to hold predictiosn and parameters
+  ## arrays to hold predictions and parameters (bootstrap resamples only)
   predictions <- matrix(NA, ncol=length(logC.values), nrow=n.boot)
-  parameters <- data.frame(slope=rep(NA, n.boot), logEC50=NA, EC50=NA,EC10=NA)
+  parameters <- data.frame(slope=rep(NA_real_, n.boot), logEC50=NA_real_, EC50=NA_real_, EC10=NA_real_)
 
-  predictions[1,] <- predict(curvefit, newdata=list(logconc=logC.values))
-  slope = coef(curvefit)['slope']
-  EC50 = 10^logEC50.value
-  EC10 = (9^(1/slope.value)) * EC50
-  parameters[1,] <- c(coef(curvefit), EC50,EC10)
-
-  ## --- define initial range of initial values
-  inits <- data.frame(slope = sort(c(0.5, 2)*slope.value),
-                      logEC50 = sort(c(0.5, 2)*logEC50.value))
-
-
+  ## row indices grouped by concentration, for stratified resampling
+  conc.groups = split(seq_len(nrow(data)), data$logconc)
 
   ## --- fit to bootstrap samples
-  for(i in 2:n.boot){
-    ## resample data
-    data2  <- data[sample(1:nrow(data), replace=T),]
+  for(i in seq_len(n.boot)){
+    ## resample replicates within each concentration level
+    idx = unlist(lapply(conc.groups, function(g) g[sample.int(length(g), replace = TRUE)]),
+                 use.names = FALSE)
+    data2 <- data[idx,]
 
-    ## fit model to resampled data
-    fit <- nls2::nls2(m.formula,
-                      start = inits,
-                      data=data2, algorithm="grid-search",
-                      control=list(maxiter=100))
+    ## fit model to resampled data; a failed fit leaves the row NA
+    fit <- tryCatch(minpack.lm::nlsLM(m.formula, data = data2, start = start),
+                    error = function(cond) NULL)
+    if(is.null(fit)) next
 
-
-    ## store predictions and parameter values
+    ## store predictions and parameter values (explicit names: coef() order depends on start)
     predictions[i,] <- predict(fit, newdata=list(logconc=logC.values))
-    slope = coef(fit)['slope']
-    EC50 = 10^(coef(fit)['logEC50'])
-    EC10 = (9^(1/slope)) * EC50
-    parameters[1,] <- c(coef(fit), EC50,EC10)
-    parameters[i,] <- c(coef(fit), EC50,EC10)
-
+    slope = unname(coef(fit)['slope'])
+    logEC50 = unname(coef(fit)['logEC50'])
+    EC50 = 10^logEC50
+    # EC10 = 10% effect = 90% survival
+    EC10 = unname(calc_ecx(90, slope, EC50))
+    parameters[i,] <- c(slope, logEC50, EC50, EC10)
   }
 
-  #list(predictions=predictions, parameters=parameters, logC.predict=logC.predict)
+  n.failed = sum(is.na(parameters$slope))
+  if(n.failed > 0) {
+    warning(sprintf("%d of %d bootstrap fits failed and were excluded", n.failed, n.boot))
+  }
+
   level_lower = (1-level)/2
   level_upper = 1- level_lower
 
-  param_ci = apply(parameters,2,quantile,probs=c(level_lower,level_upper))
+  param_ci = apply(parameters,2,quantile,probs=c(level_lower,level_upper),na.rm=TRUE)
   rownames(param_ci) = c("lower","upper")
-  pred_ci =  apply(predictions,2,quantile,probs=c(level_lower,level_upper))
+  pred_ci =  apply(predictions,2,quantile,probs=c(level_lower,level_upper),na.rm=TRUE)
   rownames(pred_ci) = c("lower","upper")
-  return(list(params=param_ci,preds=pred_ci))
+  return(list(params=param_ci,preds=pred_ci,boot.params=parameters,n.failed=n.failed))
 }
 
 
@@ -249,6 +248,7 @@ fitdr = function(m.formula,fdata,level=0.95,ci_method="delta",start=vector(),ver
   ec10.ci = NA
   ci.values.lower = NA
   ci.values.upper = NA
+  boot.params = NULL
 
 
   if (ci_method == "delta") {
@@ -275,17 +275,17 @@ fitdr = function(m.formula,fdata,level=0.95,ci_method="delta",start=vector(),ver
       ec50.ci = 10^ci.par['logEC50',]
       slope.ci = ci.par['slope',]
 
-      m.formula.ec10 = drc.formula = effect ~ 100 / (1 + 10^(((logEC50-logconc) * slope) - log10(0.9/0.1)))
+      # same curve, reparametrised so that logEC10 (90% survival) is a model parameter:
+      # at logconc = logEC10 the effect is 100/(1 + 1/9) = 90
+      m.formula.ec10 = effect ~ 100 / (1 + 10^(((logEC10-logconc) * slope) - log10(0.9/0.1)))
 
-      start.ec10 = c(logEC50= as.double(log10(ec10)),slope=as.double(slope))
-      #curvefit.ec10 = nlsfit(m.formula.ec10,start=start,fdata = fdata)
-      curvefit.ec10 = nls2::nls2(m.formula, data = fdata, start = start.ec10,
-                                 algorithm = "brute-force")
-      logec10 = coefficients(curvefit.ec10)['logEC50']
+      start.ec10 = c(logEC10 = as.double(log10(ec10)),slope=as.double(slope))
+      curvefit.ec10 = minpack.lm::nlsLM(m.formula.ec10, data = fdata, start = start.ec10)
+      logec10 = coefficients(curvefit.ec10)['logEC10']
       ec10 = 10^logec10
       ci.par.ec10 = confint2(curvefit.ec10)
       colnames(ci.par.ec10) = c('lower','upper')
-      ec10.ci = 10^ci.par.ec10['logEC50',]
+      ec10.ci = 10^ci.par.ec10['logEC10',]
 
 
 
@@ -305,7 +305,8 @@ fitdr = function(m.formula,fdata,level=0.95,ci_method="delta",start=vector(),ver
 
   } else if (ci_method == "bootstrap") {
 
-    boot = bootstrap_ci(m.formula,data=fdata,x.values,curvefit,curve.predict,n.boot = 1000)
+    boot = bootstrap_ci(m.formula,data=fdata,x.values,curvefit,curve.predict,n.boot = 1000,level = level)
+    boot.params = boot$boot.params
     slope.ci = boot$params[,"slope"]
     ec50.ci = boot$params[,"EC50"]
     ec10.ci = boot$params[,"EC10"]
@@ -324,6 +325,8 @@ fitdr = function(m.formula,fdata,level=0.95,ci_method="delta",start=vector(),ver
   list(plot.data = plot.data ,
        curve.fit=curvefit,
        confidence.level=level,
+       ci.method=ci_method,
+       boot.params=boot.params,
        data=fdata,
        ec50=ec50,
        ec50.ci = ec50.ci,
