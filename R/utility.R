@@ -31,34 +31,66 @@ inverse.hill = function(effect,logEC50,slope) {
 }
 
 
-#' Extends the plot data up to the concentration where the lower confidence interval is at 99 percent
+#' Extends the plot data down to a lower log concentration
+#'
+#' The prediction bands are computed with the same method (delta or bootstrap)
+#' and confidence level as the original fit. For the bootstrap, the stored
+#' bootstrap parameter estimates are re-evaluated on the extended grid.
 #'
 #' @param fo bendr fit object
+#' @param lox lowest log10 concentration of the extended grid; by default the
+#' concentration at which the fitted effect is 99.9 percent. The existing range is never shrunk.
+#' @param step grid spacing in log10 units
+#' @param ci.method "delta" or "bootstrap"; by default the method of the fit
 #'
 #' @return dataframe
 #' @export
-extend_ci = function(fo) {
+extend_ci = function(fo, lox = NULL, step = 0.001, ci.method = NULL) {
   m.formula = fo$curve.fit$m$formula()
-  #get concentration at which effect is 99.9%
-  lox = inverse.hill(99.9,log10(fo$ec50),fo$slope)
+  level = if(is.null(fo$confidence.level)) 0.95 else fo$confidence.level
+  if(is.null(ci.method)) ci.method = if(is.null(fo$ci.method)) "delta" else fo$ci.method
+  if(is.null(lox)) {
+    #get concentration at which effect is 99.9%
+    lox = inverse.hill(99.9,log10(fo$ec50),fo$slope)
+  }
+  lox = min(lox, min(fo$plot.data$log.concentration))
   #generate sequence from new minimal log concentration value to previous max
   xtend_x = seq(from = lox,
                 to = max(fo$plot.data$log.concentration),
-                length.out = 1E3)
+                by = step)
 
   #predict effect values along new log concentration value range
   curve.predict.xtend = predict(fo$curve.fit,newdata = data.frame(logconc=xtend_x))
-  #calculate confidence interval
-  ci.values.xtend = bendr::prediction_ci(m.formula,
-                                         x.values = xtend_x,
-                                         curvefit = fo$curve.fit,
-                                         curve.predict = curve.predict.xtend,
-                                         dof = nrow(fo$data)-2)
+
+  if(ci.method == "bootstrap") {
+    bp = fo$boot.params
+    bp = bp[!is.na(bp$slope),]
+    if(is.null(bp) || nrow(bp) == 0) {
+      stop("extend_ci: no bootstrap parameter estimates stored in the fit object")
+    }
+    preds = t(sapply(seq_len(nrow(bp)), function(i) {
+      eval(m.formula[[3]], list(logEC50 = bp$logEC50[i], slope = bp$slope[i], logconc = xtend_x))
+    }))
+    level_lower = (1-level)/2
+    ci.lower = apply(preds,2,quantile,probs=level_lower)
+    ci.upper = apply(preds,2,quantile,probs=1-level_lower)
+  } else {
+    #calculate confidence interval with the delta method
+    ci.values.xtend = prediction_ci(m.formula,
+                                    x.values = xtend_x,
+                                    curvefit = fo$curve.fit,
+                                    curve.predict = curve.predict.xtend,
+                                    dof = nrow(fo$data)-2,
+                                    level = level)
+    ci.lower = curve.predict.xtend - ci.values.xtend
+    ci.upper = curve.predict.xtend + ci.values.xtend
+  }
+
   return(data.frame(
     curve.predict = curve.predict.xtend,
     log.concentration = xtend_x,
-    ci.values.upper = curve.predict.xtend + ci.values.xtend,
-    ci.values.lower = curve.predict.xtend - ci.values.xtend
+    ci.values.upper = ci.upper,
+    ci.values.lower = ci.lower
     ))
 
 }
