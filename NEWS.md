@@ -3,6 +3,9 @@
 * `findNTC()`: new arguments `measured.criterion` and `narrow.ci.correction` (both default TRUE,
   as before) and `details`: with `details = TRUE` a list with NtC_lower, NtC_upper, their effects,
   the rule that chose the NtC, NtC_measured and the confidence band used is returned.
+* `extend_ci()`: for very flat curves the default lower end (99.9% effect) lay extremely far below
+  the data and the grid could not be allocated; the default extension is now limited to
+  `max.default = 3` log units, and ranges needing more than 1e6 grid points give an error.
 
 # bendr 0.4.0 (2026-09-29)
 

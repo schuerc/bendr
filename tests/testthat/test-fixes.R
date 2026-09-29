@@ -99,3 +99,9 @@ test_that("findNTC switches and details", {
   expect_true(d0$NtC %in% c(d0$NtC_lower, d0$NtC_upper))
   expect_false(d0$measured.applied)
 })
+
+test_that("findNTC does not blow up on a flat curve", {
+  flat = data.frame(conc = c(1, 3, 10, 30, 100), a = c(51, 49, 50, 52, 48), b = c(50, 52, 49, 50, 51))
+  fo = suppressWarnings(fitdr_replicates(drc.formula, flat, 2:3, conc))
+  expect_no_error(suppressWarnings(findNTC(fo)))
+})

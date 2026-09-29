@@ -42,18 +42,26 @@ inverse.hill = function(effect,logEC50,slope) {
 #' concentration at which the fitted effect is 99.9 percent. The existing range is never shrunk.
 #' @param step grid spacing in log10 units
 #' @param ci.method "delta" or "bootstrap"; by default the method of the fit
+#' @param max.default maximum extension (log10 units below the current range) when lox is not given
 #'
 #' @return dataframe
 #' @export
-extend_ci = function(fo, lox = NULL, step = 0.001, ci.method = NULL) {
+extend_ci = function(fo, lox = NULL, step = 0.001, ci.method = NULL, max.default = 3) {
   m.formula = fo$curve.fit$m$formula()
   level = if(is.null(fo$confidence.level)) 0.95 else fo$confidence.level
   if(is.null(ci.method)) ci.method = if(is.null(fo$ci.method)) "delta" else fo$ci.method
+  xmin = min(fo$plot.data$log.concentration)
   if(is.null(lox)) {
-    #get concentration at which effect is 99.9%
+    #get concentration at which effect is 99.9%; for very flat curves this lies extremely
+    #far below the data, so limit the default extension to max.default log units
     lox = inverse.hill(99.9,log10(fo$ec50),fo$slope)
+    if(!is.finite(lox)) lox = xmin
+    lox = max(lox, xmin - max.default)
   }
-  lox = min(lox, min(fo$plot.data$log.concentration))
+  lox = min(lox, xmin)
+  if((max(fo$plot.data$log.concentration) - lox) / step > 1e6) {
+    stop("extend_ci: the requested concentration range is too wide for the grid spacing")
+  }
   #generate sequence from new minimal log concentration value to previous max
   xtend_x = seq(from = lox,
                 to = max(fo$plot.data$log.concentration),

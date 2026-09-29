@@ -4,7 +4,7 @@
 \alias{extend_ci}
 \title{Extends the plot data down to a lower log concentration}
 \usage{
-extend_ci(fo, lox = NULL, step = 0.001, ci.method = NULL)
+extend_ci(fo, lox = NULL, step = 0.001, ci.method = NULL, max.default = 3)
 }
 \arguments{
 \item{fo}{bendr fit object}
@@ -15,6 +15,8 @@ concentration at which the fitted effect is 99.9 percent. The existing range is 
 \item{step}{grid spacing in log10 units}
 
 \item{ci.method}{"delta" or "bootstrap"; by default the method of the fit}
+
+\item{max.default}{maximum extension (log10 units below the current range) when lox is not given}
 }
 \value{
 dataframe
