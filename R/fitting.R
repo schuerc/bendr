@@ -89,8 +89,9 @@ prediction_ci = function(m.formula,x.values,curvefit,curve.predict,dof,level = 0
   }
 
   # get the confidence interval for all x_values
-  error = residual.jacobian %*% covmatrix %*% t(residual.jacobian)
-  error = diag(error)
+  # only the diagonal of J V J' is needed: rowSums((J V) * J) gives it without building the
+  # n x n matrix (n = grid points, up to ~1e4 in extend_ci/findNTC -> ~800 MB before)
+  error = rowSums((residual.jacobian %*% covmatrix) * residual.jacobian)
   error = sqrt(error)
 
   # t for the inverse studen't distribution depends on the number of measurements

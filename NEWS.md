@@ -1,3 +1,10 @@
+# bendr 0.4.2 (2026-11-19)
+
+* `prediction_ci()`: computes the standard errors as `rowSums((J %*% V) * J)` (the diagonal of
+  `J V J'`) instead of building the full n x n matrix and taking its diagonal. Same results; for the
+  ~10,000-point grids of `extend_ci()`/`findNTC()` (steep curves) peak memory drops from ~1.3 GB to
+  ~30 MB and run time from ~3 s to ~0.04 s.
+
 # bendr 0.4.1 (2026-09-29)
 
 * `findNTC()`: new arguments `measured.criterion` and `narrow.ci.correction` (both default TRUE,

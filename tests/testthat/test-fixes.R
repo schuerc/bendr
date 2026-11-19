@@ -105,3 +105,21 @@ test_that("findNTC does not blow up on a flat curve", {
   fo = suppressWarnings(fitdr_replicates(drc.formula, flat, 2:3, conc))
   expect_no_error(suppressWarnings(findNTC(fo)))
 })
+
+test_that("prediction_ci uses only the diagonal of J V J' (no n x n matrix)", {
+  fo = fitdr_replicates(drc.formula, syn, 2:4, conc)
+  x = seq(-2, 2, length.out = 50)
+  pred = 100 / (1 + 10^((coef(fo$curve.fit)[["logEC50"]] - x) * coef(fo$curve.fit)[["slope"]]))
+  dof = nrow(fo$data) - 2
+  ci = prediction_ci(drc.formula, x, fo$curve.fit, pred, dof)
+  # reference: the full matrix product, as before
+  jac = nlmrt::model2jacfun(drc.formula, coef(fo$curve.fit))(coef(fo$curve.fit), list(logconc = x), list(effect = pred))
+  ref = sqrt(diag(jac %*% vcov(fo$curve.fit) %*% t(jac))) * qt(0.975, dof)
+  expect_equal(unname(ci), unname(ref), tolerance = 1e-10)
+  # a grid as large as in findNTC's range extension stays cheap
+  xl = seq(-8, 2, by = 0.001)
+  pl = 100 / (1 + 10^((coef(fo$curve.fit)[["logEC50"]] - xl) * coef(fo$curve.fit)[["slope"]]))
+  t = system.time(cil <- prediction_ci(drc.formula, xl, fo$curve.fit, pl, dof))[["elapsed"]]
+  expect_length(cil, length(xl))
+  expect_lt(t, 2)
+})
